@@ -1,0 +1,8 @@
+# segreti e dati locali
+.env
+.cache/
+data/
+.venv/
+
+__pycache__/
+.pytest_cache/
