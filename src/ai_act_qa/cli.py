@@ -1,4 +1,4 @@
-"""Comandi da terminale: chunks, embed, search, ask."""
+"""Comandi da terminale: chunks, embed, search, ask, llama, show, eval."""
 
 import argparse
 import os
@@ -8,8 +8,21 @@ from dotenv import load_dotenv
 from google import genai
 
 from ai_act_qa.corpus import build_chunks, corpus_stats, load_chunks, read_text_file, save_chunks
-from ai_act_qa.embed_texts import GeminiEmbedder
+from ai_act_qa.embed_texts import GeminiEmbedder, embed_cached, format_query
 from ai_act_qa.eurlex_html import html_to_text
+from ai_act_qa.evaluation import (
+    LANGS,
+    LEVELS,
+    compare,
+    first_gold_rank,
+    format_table,
+    load_questions,
+    run_retrieval,
+    save_results,
+    subset,
+    summarize,
+    validate_questions,
+)
 from ai_act_qa.generate import GEN_MODEL, answer_question
 from ai_act_qa.kb import embed_chunks, make_query_embedder
 from ai_act_qa.retrieval import MODES, HybridRetriever
@@ -19,6 +32,9 @@ CACHE_DIR = Path(".cache")
 CHUNKS_FILE = CACHE_DIR / "chunks.json"
 DOC_CACHE = CACHE_DIR / "doc_embeddings.json"
 QUERY_CACHE = CACHE_DIR / "query_embeddings.json"
+
+QUESTIONS_FILE = Path("eval") / "questions.json"
+RESULTS_FILE = Path("eval") / "results.json"
 
 
 def make_embedder() -> GeminiEmbedder:
@@ -99,6 +115,74 @@ def cmd_llama(args) -> None:
     engine = llama_version.make_query_engine(index, llama_version.default_llm(), k=args.k)
     print("\nRisposta:")
     print(engine.query(args.question))
+    
+def cmd_show(args) -> None:
+    """Stampa il testo di un articolo o allegato, per controllare le risposte di riferimento."""
+    if not CHUNKS_FILE.exists():
+        raise SystemExit("Mancano i chunk: lancia prima il comando 'chunks'.")
+    found = [c for c in load_chunks(CHUNKS_FILE) if c.ref.lower() == args.ref.lower()]
+    if not found:
+        raise SystemExit(f"Riferimento non trovato: {args.ref}")
+    print(f"{found[0].ref} - {found[0].title}")
+    for chunk in found:
+        print(f"\n[{chunk.part}/{chunk.parts}] {chunk.text}")
+
+
+def cmd_eval(args) -> None:
+    if not CHUNKS_FILE.exists():
+        raise SystemExit("Mancano i chunk: lancia prima il comando 'chunks'.")
+    chunks = load_chunks(CHUNKS_FILE)
+    questions = load_questions(QUESTIONS_FILE)
+    problems = validate_questions(questions, chunks)
+    for problem in problems:
+        print("PROBLEMA:", problem)
+    if problems:
+        raise SystemExit(f"{len(problems)} problemi nelle domande: correggi e rilancia.")
+    print(f"{len(questions)} domande valide.")
+    if args.check:
+        return
+
+    embedder = make_embedder()
+    # embedding di tutte le domande in poche chiamate, invece di una per domanda
+    embed_cached([format_query(q.question) for q in questions], embedder, QUERY_CACHE)
+    retriever = load_retriever(embedder)
+    runs = run_retrieval(retriever, questions)
+    summary = summarize(runs, questions)
+
+    print("\n" + format_table(summary, "TUTTE LE DOMANDE (n=%d)" % len(questions)))
+    for lang in LANGS:
+        part = subset(questions, lang=lang)
+        print("\n" + format_table(summarize(runs, part), f"LINGUA {lang} (n={len(part)})"))
+    for level in LEVELS:
+        part = subset(questions, difficulty=level)
+        print("\n" + format_table(summarize(runs, part), f"DIFFICOLTA {level} (n={len(part)})"))
+
+    only_hybrid, only_dense = compare(runs, questions, "hybrid", "dense", 5)
+    print(f"\nA k=5: trovate solo da hybrid {only_hybrid}, solo da dense {only_dense}")
+    print("\nDomande NON trovate entro k=5 con hybrid:")
+    for q in questions:
+        rank = first_gold_rank(runs["hybrid"][q.id], q.gold)
+        if rank is None or rank > 5:
+            print(f"  {q.id} [{q.lang}, {q.difficulty}] attesi {q.gold}, primo posto utile: {rank}")
+    save_results(RESULTS_FILE, summary, runs, questions)
+    print("risultati salvati in", RESULTS_FILE)
+    
+
+def cmd_why(args) -> None:
+    """Per una domanda di valutazione: i primi risultati di ogni modalita', con * sui riferimenti attesi."""
+    questions = {q.id: q for q in load_questions(QUESTIONS_FILE)}
+    if args.id not in questions:
+        raise SystemExit(f"Domanda non trovata: {args.id}")
+    q = questions[args.id]
+    retriever = load_retriever(make_embedder())
+    print(f"{q.id} [{q.lang}, {q.difficulty}] {q.question}")
+    print(f"attesi: {q.gold}")
+    for mode in MODES:
+        print(f"\n== {mode} ==")
+        for hit in retriever.search(q.question, k=args.k, mode=mode):
+            chunk = retriever.chunks[hit.index]
+            mark = "*" if chunk.ref in q.gold else " "
+            print(f" {mark} {hit.rank}. {chunk.label()[:90]}  [{hit.score:.4f}]")
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="ai_act_qa")
@@ -127,7 +211,20 @@ def main() -> None:
     p.add_argument("question")
     p.add_argument("-k", type=int, default=5)
     p.set_defaults(func=cmd_llama)
+    
+    p = sub.add_parser("show", help="stampa il testo di un articolo o allegato")
+    p.add_argument("ref", help='per esempio "Article 5" oppure "Annex III"')
+    p.set_defaults(func=cmd_show)
 
+    p = sub.add_parser("eval", help="valuta il retrieval sulle domande di eval/questions.json")
+    p.add_argument("--check", action="store_true", help="controlla solo le domande (nessuna API)")
+    p.set_defaults(func=cmd_eval)
+    
+    p = sub.add_parser("why", help="mostra i risultati di una domanda di valutazione")
+    p.add_argument("id", help="per esempio q10")
+    p.add_argument("-k", type=int, default=5)
+    p.set_defaults(func=cmd_why)
+    
     args = parser.parse_args()
     args.func(args)
 

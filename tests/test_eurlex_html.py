@@ -55,6 +55,12 @@ def test_html_to_text_feeds_the_parser():
     assert chunks["Article 1"].chapter == "Chapter I - GENERAL PROVISIONS"
     assert chunks["Annex I"].title == "List of legislation"
 
+def test_real_exponent_is_kept_but_footnote_reference_is_removed():
+    html = HTML.replace("Providers may process data.",
+                        'More than 10<span class="superscript">25</span> operations.')
+    text = html_to_text(html)
+    assert "10^25 operations" in text
+    assert "market." in text  # il rimando di nota resta eliminato
 
 def test_unrecognised_page_raises():
     with pytest.raises(ValueError):
