@@ -91,7 +91,10 @@ def html_to_text(html: str) -> str:
         br.replace_with(" ")
     for sup in soup.select("span.superscript"):
         link = sup.find_parent("a")
-        (link or sup).decompose()
+        if link is not None:
+            link.decompose() #rimando di nota: (1), (*1)
+        else:
+            sup.replace_with("^" + sup.get_text(strip=True))
 
     body = soup.find(id="enc_1")
     annexes = [d for d in soup.find_all("div", id=re.compile(r"^anx_[IVXLC]+$"))]
