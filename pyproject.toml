@@ -1,9 +1,9 @@
 [project]
 name = "ai-act-qa"
 version = "0.1.0"
-description = "Add your description here"
+description = "Question answering on the EU AI Act with cited sources: Gemini embeddings, FAISS, BM25 and a measured retrieval evaluation"
 authors = [
-    { name = "Matteo Magliano", email = "perfiu02@gmail.com" }
+    { name = "Matteo Magliano", email = "matteomagliano02@gmail.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [

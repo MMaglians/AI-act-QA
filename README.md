@@ -6,7 +6,7 @@ Question answering on the EU AI Act (Regulation (EU) 2024/1689) with cited sourc
 
 You ask a question in English or Italian. The tool retrieves the most relevant passages of the regulation, asks a Gemini model to answer **only** from those passages, and checks that every citation (`[S1]`, `[S2]`...) points to a passage that was actually provided. If the passages do not contain the answer, the model must reply `NOT_FOUND`.
 
-This is a learning project. It was not thinked as a legal advice.
+This is a learning project. It is not intended as a legal advice.
 
 ## Quickstart
 
@@ -37,7 +37,7 @@ uv run python -m ai_act_qa.cli eval                                           # 
 1. **Chunking**: structure-aware, one passage per article or annex, split in parts of at most 220 words (361 chunks, 119 articles, 14 annexes).
 2. **Dense retrieval**: `gemini-embedding-2` (768 dimensions), with different formats for documents and queries, exact search with FAISS `IndexFlatIP`.
 3. **Lexical retrieval**: BM25 (Okapi, k1=1.5, b=0.75) written by hand, no stemming, English stop words only.
-4. **Hybrid**: Reciprocal Rank Fusion (k=60) of the first 30 results of each list.
+4. **Hybrid**: Reciprocal Rank Fusion (k=60) of the first 30 results of each list. `ask` uses dense retrieval by default, the best mode in the evaluation; use `--mode hybrid` for the fusion.
 5. **Generation**: `gemini-3.5-flash-lite`, temperature 0, answers only from the retrieved passages, mechanical check of the citations.
 6. **LlamaIndex version**: the same chunks and vectors, to compare a framework against the hand-written pipeline.
 
