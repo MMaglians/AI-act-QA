@@ -204,7 +204,7 @@ def main() -> None:
     p = sub.add_parser("ask", help="recupera i passaggi e genera la risposta")
     p.add_argument("question")
     p.add_argument("-k", type=int, default=5)
-    p.add_argument("--mode", choices=MODES, default="hybrid")
+    p.add_argument("--mode", choices=MODES, default="dense")
     p.set_defaults(func=cmd_ask)
     
     p = sub.add_parser("llama", help="stessa domanda con LlamaIndex")
